@@ -1,0 +1,372 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organisation {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  logisticsSettings LogisticsOrganisationSettings?
+  inventoryItems    InventoryItem[]
+  inventoryLocations InventoryLocation[]
+  inventoryTransactions InventoryTransaction[]
+  balances          InventoryBalance[]
+  memberCustody     MemberCustody[]
+  equipmentRequests EquipmentRequest[]
+  reservations      StockReservation[]
+  scans             StockScan[]
+  imports           InventoryImport[]
+  spreadsheetConnections SpreadsheetConnection[]
+  auditLogs         LogisticsAuditLog[]
+}
+
+model LogisticsOrganisationSettings {
+  id                      String   @id @default(cuid())
+  organisationId          String   @unique
+  organisation            Organisation @relation(fields: [organisationId], references: [id])
+  logisticsEnabled        Boolean  @default(true)
+  defaultCurrency         String?  @default("USD")
+  defaultDateFormat       String   @default("YYYY-MM-DD")
+  defaultExportTemplate   String   @default("default")
+  requireScanApproval     Boolean  @default(true)
+  minimumAiConfidence     Float    @default(0.75)
+  allowMemberRequests     Boolean  @default(true)
+  allowDiscordRequests    Boolean  @default(true)
+  allowGoogleSheetsSync   Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model InventoryItem {
+  id                String   @id @default(cuid())
+  organisationId    String
+  organisation      Organisation @relation(fields: [organisationId], references: [id])
+  catalogueItemId   String?
+  itemName          String
+  manufacturer      String?
+  category          String?
+  subcategory       String?
+  armourClass       String?
+  weaponType        String?
+  variant           String?
+  colour            String?
+  description       String?
+  imageUrl          String?
+  stockCode         String?
+  reorderLevel      Int      @default(0)
+  isRestricted      Boolean  @default(false)
+  isConsumable      Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  aliases           InventoryItemAlias[]
+  locations         InventoryBalance[]
+  transactions      InventoryTransactionLine[]
+  custody           MemberCustody[]
+  requestLines      EquipmentRequestLine[]
+  reservations      StockReservation[]
+  scansDetected     StockScanDetectedItem[]
+  importRows        InventoryImportRow[]
+}
+
+model InventoryItemAlias {
+  id                String   @id @default(cuid())
+  organisationId    String
+  inventoryItemId   String
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  alias             String
+  normalisedAlias   String
+  source            String   @default("manual")
+  createdAt         DateTime @default(now())
+}
+
+model InventoryLocation {
+  id                String   @id @default(cuid())
+  organisationId    String
+  organisation      Organisation @relation(fields: [organisationId], references: [id])
+  parentLocationId  String?
+  name              String
+  type              String
+  systemName        String?
+  planetName        String?
+  stationName       String?
+  shipId            String?
+  description       String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  balances          InventoryBalance[]
+  sourceTransactions InventoryTransaction[] @relation("SourceLocation")
+  destinationTransactions InventoryTransaction[] @relation("DestinationLocation")
+  reservations      StockReservation[]
+  scans             StockScan[]
+  imports           InventoryImportRow[]
+  spreadsheetConnections SpreadsheetConnection[]
+}
+
+model InventoryTransaction {
+  id                    String   @id @default(cuid())
+  organisationId        String
+  organisation          Organisation @relation(fields: [organisationId], references: [id])
+  transactionNumber     String   @unique
+  transactionType       String
+  sourceLocationId      String?
+  sourceLocation        InventoryLocation? @relation("SourceLocation", fields: [sourceLocationId], references: [id])
+  destinationLocationId String?
+  destinationLocation   InventoryLocation? @relation("DestinationLocation", fields: [destinationLocationId], references: [id])
+  memberId              String?
+  operationId           String?
+  requestId             String?
+  importId              String?
+  stockScanId           String?
+  status                String   @default("APPROVED")
+  reason                String
+  notes                 String?
+  createdByUserId       String
+  approvedByUserId      String?
+  createdAt             DateTime @default(now())
+  approvedAt            DateTime?
+  reversedTransactionId String?
+
+  lines                 InventoryTransactionLine[]
+}
+
+model InventoryTransactionLine {
+  id                String   @id @default(cuid())
+  transactionId     String
+  transaction       InventoryTransaction @relation(fields: [transactionId], references: [id])
+  inventoryItemId   String
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantity          Int
+  condition         String   @default("GOOD")
+  unitReference     String?
+  notes             String?
+  createdAt         DateTime @default(now())
+}
+
+model InventoryBalance {
+  id                String   @id @default(cuid())
+  organisationId    String
+  organisation      Organisation @relation(fields: [organisationId], references: [id])
+  inventoryItemId    String
+  inventoryItem      InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  locationId         String
+  location          InventoryLocation @relation(fields: [locationId], references: [id])
+  totalQuantity     Int      @default(0)
+  availableQuantity Int      @default(0)
+  reservedQuantity  Int      @default(0)
+  issuedQuantity    Int      @default(0)
+  damagedQuantity   Int      @default(0)
+  lastTransactionAt DateTime?
+  updatedAt         DateTime @updatedAt
+}
+
+model MemberCustody {
+  id                  String   @id @default(cuid())
+  organisationId      String
+  organisation        Organisation @relation(fields: [organisationId], references: [id])
+  memberId            String
+  inventoryItemId     String
+  inventoryItem       InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantityIssued      Int
+  quantityReturned    Int      @default(0)
+  quantityOutstanding Int      @default(0)
+  issuedTransactionId String
+  operationId         String?
+  issuedAt            DateTime @default(now())
+  expectedReturnAt    DateTime?
+  status              String   @default("ACTIVE")
+  notes               String?
+  updatedAt           DateTime @updatedAt
+}
+
+model EquipmentRequest {
+  id                  String   @id @default(cuid())
+  organisationId      String
+  organisation        Organisation @relation(fields: [organisationId], references: [id])
+  requestNumber       String   @unique
+  requestedByMemberId String
+  operationId         String?
+  title               String
+  reason              String
+  requiredByDate      DateTime?
+  priority            String   @default("NORMAL")
+  status              String   @default("DRAFT")
+  reviewedByUserId    String?
+  reviewNotes         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  approvedAt          DateTime?
+  completedAt         DateTime?
+
+  lines               EquipmentRequestLine[]
+}
+
+model EquipmentRequestLine {
+  id                      String   @id @default(cuid())
+  equipmentRequestId      String
+  equipmentRequest        EquipmentRequest @relation(fields: [equipmentRequestId], references: [id])
+  inventoryItemId         String
+  inventoryItem           InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantityRequested       Int
+  quantityApproved       Int      @default(0)
+  quantityReserved       Int      @default(0)
+  quantityIssued         Int      @default(0)
+  substitutionAllowed     Boolean  @default(false)
+  suggestedReplacementItemId String?
+  lineStatus             String   @default("PENDING")
+  notes                  String?
+}
+
+model StockReservation {
+  id                String   @id @default(cuid())
+  organisationId    String
+  organisation      Organisation @relation(fields: [organisationId], references: [id])
+  equipmentRequestId String?
+  operationId       String?
+  inventoryItemId   String
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  locationId        String
+  location          InventoryLocation @relation(fields: [locationId], references: [id])
+  quantity          Int
+  reservedByUserId  String
+  expiresAt         DateTime?
+  status            String   @default("ACTIVE")
+  createdAt         DateTime @default(now())
+  releasedAt        DateTime?
+}
+
+model StockScan {
+  id                  String   @id @default(cuid())
+  organisationId      String
+  organisation        Organisation @relation(fields: [organisationId], references: [id])
+  uploadedByUserId    String
+  sourceLocationId    String?
+  sourceLocation      InventoryLocation? @relation(fields: [sourceLocationId], references: [id])
+  imageUrl            String
+  imageHash           String
+  environment         String
+  scanStatus          String   @default("UPLOADED")
+  aiProvider          String   @default("GEMINI")
+  aiModel             String?
+  rawAiResponse       String?
+  averageConfidence   Float?
+  reviewedByUserId    String?
+  reviewedAt          DateTime?
+  createdAt           DateTime @default(now())
+
+  detectedItems       StockScanDetectedItem[]
+}
+
+model StockScanDetectedItem {
+  id                     String   @id @default(cuid())
+  stockScanId            String
+  stockScan              StockScan @relation(fields: [stockScanId], references: [id])
+  detectedName           String
+  detectedManufacturer   String?
+  detectedCategory       String?
+  detectedVariant        String?
+  detectedQuantity       Int
+  matchedInventoryItemId String?
+  matchedInventoryItem   InventoryItem? @relation(fields: [matchedInventoryItemId], references: [id])
+  confidence             Float
+  boundingBox            String?
+  matchStatus            String   @default("UNKNOWN")
+  reviewerCorrection     String?
+  approvedQuantity       Int?
+  createdAt              DateTime @default(now())
+}
+
+model InventoryImport {
+  id                  String   @id @default(cuid())
+  organisationId      String
+  organisation        Organisation @relation(fields: [organisationId], references: [id])
+  uploadedByUserId    String
+  fileName            String
+  fileType            String
+  storageUrl          String
+  importStatus        String   @default("UPLOADED")
+  totalRows           Int      @default(0)
+  validRows           Int      @default(0)
+  invalidRows         Int      @default(0)
+  duplicateRows       Int      @default(0)
+  mappingConfiguration Json?
+  createdAt           DateTime @default(now())
+  approvedAt          DateTime?
+
+  rows                InventoryImportRow[]
+}
+
+model InventoryImportRow {
+  id                    String   @id @default(cuid())
+  inventoryImportId     String
+  inventoryImport       InventoryImport @relation(fields: [inventoryImportId], references: [id])
+  rowNumber             Int
+  originalData          Json
+  mappedData            Json
+  validationErrors      Json?
+  action                String
+  matchedInventoryItemId String?
+  matchedInventoryItem   InventoryItem? @relation(fields: [matchedInventoryItemId], references: [id])
+  matchedLocationId     String?
+  matchedLocation       InventoryLocation? @relation(fields: [matchedLocationId], references: [id])
+  status                String   @default("PENDING")
+}
+
+model SpreadsheetConnection {
+  id                      String   @id @default(cuid())
+  organisationId          String
+  organisation            Organisation @relation(fields: [organisationId], references: [id])
+  locationId              String?
+  location                InventoryLocation? @relation(fields: [locationId], references: [id])
+  provider                String
+  connectionName          String
+  externalDocumentId      String
+  externalDocumentName    String
+  worksheetName           String
+  syncDirection           String
+  mappingConfiguration    Json?
+  encryptedCredentialsReference String?
+  lastSyncedAt            DateTime?
+  syncStatus              String   @default("DISCONNECTED")
+  createdByUserId         String
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model LogisticsAuditLog {
+  id              String   @id @default(cuid())
+  organisationId  String
+  organisation    Organisation @relation(fields: [organisationId], references: [id])
+  userId          String
+  action          String
+  entityType      String
+  entityId        String
+  previousData    Json?
+  newData         Json?
+  reason          String?
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+}
+
+model LogisticsOrgAdmin {
+  id            String   @id @default(cuid())
+  organisationId String
+  userId        String
+  assignedBy    String
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([organisationId, userId])
+  @@index([organisationId, active])
+}
